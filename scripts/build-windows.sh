@@ -87,7 +87,9 @@ PATH="$SYSTEM/System32:$SYSTEM" "$HELPER/digup.exe" --help > /dev/null
 PATH="$SYSTEM/System32:$SYSTEM" "$HELPER/ffprobe.exe" -version > /dev/null
 echo "helper\\: $(ls "$HELPER" | wc -l) files, $(du -sh "$HELPER" | cut -f1)"
 
-# The shell and its installer.
+# The shell and its installer. Git's bash has a link.exe of its own (/usr/bin/link) ahead of MSVC's on PATH, so Rust
+# is told which one links.
+export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="$(cygpath -w "$(cygpath -u "$VCToolsInstallDir")/bin/Hostx64/x64/link.exe")"
 (cd shell && npx --yes "@tauri-apps/cli@$TAURI_CLI" build --config "{\"version\":\"$VERSION\"}")
 mkdir -p "$OUT"
 INSTALLER="$OUT/DigUp-$VERSION-setup.exe"
