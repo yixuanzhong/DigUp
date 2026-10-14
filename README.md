@@ -123,6 +123,37 @@ Exact-word matches get a boost, because no embedding holds an invoice number exa
 The index remembers which model version made its vectors. An update that leaves the vectors unchanged keeps your
 index, and a test checks every llama.cpp update against stored reference vectors before it ships.
 
+## Windows
+
+DigUp also runs on 64-bit Windows 10 and 11: the same engine and model, with a tray
+icon instead of the menu bar and **Ctrl+Shift+Space** for the search panel. Its installer comes from
+`scripts/build-windows.sh`, and the Windows workflow builds it, tries it on a few files and attaches it to each
+release. It installs for you alone, without asking for an administrator; Windows' SmartScreen asks once, because the
+installer isn't code-signed ("More info", then "Run anyway").
+
+| | Needs |
+|---|---|
+| Processor | 64-bit, 4 cores or more. The model runs on the graphics chip through Vulkan when the driver has it, integrated ones (Intel Iris Xe and Arc, AMD Radeon) included, else on up to 8 processor threads |
+| Memory | 8 GB. Indexing takes about 1.5 GB while it runs, searching about 0.4 GB |
+| Disk | About 1.2 GB for DigUp and the model, plus the index: about 2 KB a picture, page or passage, roughly 100 MB for 50,000 files |
+| Network | Once, for the 865 MB model (and WebView2, if an older Windows 10 lacks it) |
+
+The first pass is slower than on a Mac, roughly 10 to 30 times on a laptop with integrated graphics: half an hour to
+two hours for a few hundred files, and most of a day for a big library of photos and video. It runs at low priority so
+the PC stays usable, and it happens once: after that, new files are searchable within seconds. A few things the Mac version does aren't there yet on Windows: the text inside
+screenshots and scanned PDFs (they're found by what they show and by name), RAW photos, legacy `.doc` files, code
+search, and opening a video at its moment (the panel's preview plays from there; ↩ opens the file at its start).
+
+The app lives in `%LOCALAPPDATA%\DigUp`, with the model and the index beside it. To remove it, use Settings → Apps; check
+"Delete the application data" to remove the model and the index too.
+
+To build it, in Git for Windows' bash inside an x64 Native Tools prompt, with Swift 6.2, Rust, Node.js, CMake and the
+Vulkan SDK on PATH:
+
+```sh
+scripts/build-windows.sh          # → build.noindex/windows/DigUp-<version>-setup.exe
+```
+
 ## Build from source
 
 You'll need Xcode 26, git, and CMake (or `uv`) for llama.cpp. If `xcode-select -p` shows the Command Line Tools,
@@ -145,7 +176,7 @@ holds the queries ranking changes are measured with.
 **How is this different from Spotlight?** Spotlight finds files by their names, text and metadata. DigUp also finds
 them by what they show or say, and takes you to the page or moment. The two work fine side by side.
 
-**Windows or Linux?** Both are on the way.
+**Windows or Linux?** Windows: see [Windows](#windows). Linux is on the way.
 
 **Why is the download 865 MB?** That's the model: the text part (310 MB) and the image and audio encoders (555 MB).
 The app itself is about 20 MB.
