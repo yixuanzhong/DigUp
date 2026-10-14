@@ -12,7 +12,7 @@ const PAGES = ["welcome", "folders", "shortcut", "ready"];
 const $ = (id) => document.getElementById(id);
 const folders = new Map();   // path → {checked, row, counts}
 let page = 0;
-let info = { offered: [], chosen: [], hotkey: "", model: { state: "checking" }, auto: false };
+let info = { offered: [], chosen: [], hotkey: "", model: { state: "checking" }, login: {}, auto: false };
 
 async function start() {
   info = await invoke("setup_info");
@@ -26,6 +26,9 @@ async function start() {
   showModel(info.model);
   tauri.event.listen("model", ({ payload }) => showModel(payload));
   showKeys(info.hotkey);
+  // Opening at sign-in (Windows): suggested on a first launch, as the Mac app does; later, as it is.
+  $("login").hidden = !info.login.supported;
+  $("login-box").checked = firstTime || info.login.on;
   if (!firstTime) page = 1;   // Choose Folders…: straight to the folders
   const asked = PAGES.indexOf(new URLSearchParams(location.search).get("page"));   // dev snapshots: ?page=folders
   if (asked >= 0) page = asked;
@@ -50,7 +53,10 @@ $("next").addEventListener("click", async () => {
   }
   $("next").disabled = true;
   try {
-    await invoke("finish_setup", { folders: chosenFolders() });
+    await invoke("finish_setup", {
+      folders: chosenFolders(),
+      atLogin: info.login.supported ? $("login-box").checked : null,
+    });
   } catch (error) {
     $("model").textContent = String(error);
     $("next").disabled = false;

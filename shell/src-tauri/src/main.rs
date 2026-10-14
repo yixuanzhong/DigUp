@@ -5,6 +5,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod helper;
+mod login;
 mod options;
 mod settings;
 mod watcher;
@@ -17,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
@@ -41,6 +42,8 @@ struct Shell {
     watcher: Mutex<Option<FolderWatcher>>,
     /// The tray menu's first line: what's going on.
     status: Mutex<Option<MenuItem<Wry>>>,
+    /// The tray's Open at Sign-In (where the system has it).
+    login_item: Mutex<Option<CheckMenuItem<Wry>>>,
     /// When the search service last reloaded the index (while indexing, at most every few seconds).
     reloaded: Mutex<Instant>,
     /// Debug runs with setup: the panel's query waits until the first index is in.
@@ -153,6 +156,7 @@ fn setup_info(app: AppHandle, shell: State<'_, Arc<Shell>>) -> Value {
         "chosen": shell.folders(),
         "hotkey": shortcut_text(&shell.hotkey()),
         "model": shell.model_state.lock().unwrap().clone(),
+        "login": {"supported": login::is_supported(), "on": login::is_on()},
         "auto": shell.options.debug_setup,
     })
 }
@@ -168,9 +172,17 @@ async fn pick_folders(app: AppHandle) -> Vec<String> {
     picked.into_iter().filter_map(|folder| folder.into_path().ok()).map(|path| path.display().to_string()).collect()
 }
 
-/// Setup's last step: the folders are saved and indexing starts (once the model is in).
+/// Setup's last step: the folders are saved, opening at sign-in is set as chosen, and indexing starts (once the model
+/// is in).
 #[tauri::command]
-fn finish_setup(app: AppHandle, shell: State<'_, Arc<Shell>>, folders: Vec<String>) -> Result<(), String> {
+fn finish_setup(app: AppHandle, shell: State<'_, Arc<Shell>>, folders: Vec<String>, at_login: Option<bool>)
+    -> Result<(), String> {
+    if let Some(on) = at_login.filter(|_| login::is_supported() && !shell.options.debug_setup) {
+        if let Err(error) = login::set(on) {
+            eprintln!("digup-shell: can't change opening at sign-in: {error}");
+        }
+        show_login(&shell);
+    }
     {
         let mut settings = shell.settings.lock().unwrap();
         settings.folders = folders;
@@ -325,6 +337,7 @@ fn setup(app: &mut tauri::App, options: Options) -> Result<(), Box<dyn std::erro
         model_state: Mutex::new(json!({"state": "checking"})),
         watcher: Mutex::new(None),
         status: Mutex::new(None),
+        login_item: Mutex::new(None),
         reloaded: Mutex::new(Instant::now()),
         debug_query_sent: AtomicBool::new(false),
         logs,
@@ -530,12 +543,16 @@ fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
     let search = MenuItem::with_id(app, "search", "Search…", true, Some(shell.hotkey().as_str()))?;
     let folders = MenuItem::with_id(app, "folders", "Choose Folders…", true, None::<&str>)?;
     let index = MenuItem::with_id(app, "index", "Index Now", true, None::<&str>)?;
+    let login_item = CheckMenuItem::with_id(app, "login", "Open at Sign-In", true, login::is_on(), None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit DigUp", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
         &[&status, &separator, &search, &folders, &index, &PredefinedMenuItem::separator(app)?, &quit_item],
     )?;
+    if login::is_supported() {
+        menu.insert(&login_item, 5)?;   // after Index Now, above the separator
+    }
     // A Mac's menu bar takes a template (it colors it); trays elsewhere show the app's own small icon.
     #[cfg(target_os = "macos")]
     let icon = tauri::include_image!("icons/tray-template.png");
@@ -553,6 +570,13 @@ fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
                 let _ = show_setup(app);
             }
             "index" => run_index(app),
+            "login" => {
+                let shell = app.state::<Arc<Shell>>();
+                if let Err(error) = login::set(!login::is_on()) {
+                    eprintln!("digup-shell: can't change opening at sign-in: {error}");
+                }
+                show_login(&shell);
+            }
             "quit" => quit(app),
             _ => {}
         })
@@ -566,7 +590,15 @@ fn make_tray(app: &AppHandle, shell: &Arc<Shell>) -> tauri::Result<()> {
         })
         .build(app)?;
     *shell.status.lock().unwrap() = Some(status);
+    *shell.login_item.lock().unwrap() = Some(login_item);
     Ok(())
+}
+
+/// The tray's Open at Sign-In checked as it is (a click checks it before the change is made, or fails to be).
+fn show_login(shell: &Shell) {
+    if let Some(item) = shell.login_item.lock().unwrap().as_ref() {
+        let _ = item.set_checked(login::is_on());
+    }
 }
 
 fn set_status(app: &AppHandle, text: &str) {

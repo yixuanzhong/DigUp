@@ -1,0 +1,131 @@
+# Builds DigUp's Windows installer (scripts/build-windows.sh) on GitHub's Windows machines, then tries the helper it
+# ships end to end on a few made-up files: the model downloads, the files are indexed (on the processor: these machines
+# have no GPU) and a search finds the right one. The installer is kept as the run's artifact, and attached to the
+# release when a release is published.
+name: Windows
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - Package.swift
+      - Sources/**
+      - shell/**
+      - scripts/build-windows.sh
+      - scripts/build-llama.sh
+      - scripts/fetch-vendor.sh
+      - scripts/llama.cpp-no-logits.patch
+      - .github/workflows/windows.yml
+  push:
+    paths:
+      - Package.swift
+      - Sources/**
+      - shell/**
+      - scripts/build-windows.sh
+      - scripts/build-llama.sh
+      - scripts/fetch-vendor.sh
+      - scripts/llama.cpp-no-logits.patch
+      - .github/workflows/windows.yml
+
+permissions: {}
+
+env:
+  SWIFT_VERSION: "6.2"
+  VULKAN_VERSION: 1.4.313.2
+
+jobs:
+  installer:
+    runs-on: windows-2025
+    timeout-minutes: 150
+    permissions:
+      contents: write   # attaching the installer to a published release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Swift
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\swift.exe"
+          $v = $env:SWIFT_VERSION
+          curl.exe -fsSL --retry 3 -o $installer "https://download.swift.org/swift-$v-release/windows10/swift-$v-RELEASE/swift-$v-RELEASE-windows10.exe"
+          Start-Process -Wait -FilePath $installer -ArgumentList '/quiet', '/norestart'
+          # The installer changes PATH and SDKROOT for new sessions only: hand them to the next steps.
+          foreach ($scope in 'User', 'Machine') {
+            foreach ($entry in ([Environment]::GetEnvironmentVariable('Path', $scope) -split ';')) {
+              if ($entry -match 'Swift') { $entry | Out-File -Append -Encoding utf8 $env:GITHUB_PATH }
+            }
+            $sdk = [Environment]::GetEnvironmentVariable('SDKROOT', $scope)
+            if ($sdk) { "SDKROOT=$sdk" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV }
+          }
+
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = "$env:RUNNER_TEMP\vulkan.exe"
+          curl.exe -fsSL --retry 3 -o $installer "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & $installer --accept-licenses --default-answer --confirm-command install
+          "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "C:\VulkanSDK\$env:VULKAN_VERSION\Bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      # llama.cpp takes the longest to build: kept between runs while its pinned tag, patch and build don't change.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            Vendor/llama
+            Vendor/sqlite
+            Vendor/stb
+            Vendor/miniz
+            Vendor/pdfium
+            Vendor/VENDOR
+          key: windows-vendor-${{ env.VULKAN_VERSION }}-${{ hashFiles('scripts/build-llama.sh', 'scripts/fetch-vendor.sh', 'scripts/llama.cpp-no-logits.patch') }}
+
+      - name: Build the installer
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS=%%i"
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          "C:\Program Files\Git\bin\bash.exe" scripts/build-windows.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DigUp-windows-installer
+          path: build.noindex/windows/*.exe
+          if-no-files-found: error
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/models
+          key: embeddinggemma-2-q8_0-bfcd298762cc34d0357ece5ebdd31791a3a374d8
+
+      - name: Index and search with the shipped helper
+        shell: bash
+        env:
+          DIGUP_MODELS: ${{ runner.temp }}/models
+        run: |
+          set -euo pipefail
+          helper=shell/src-tauri/helper
+          files="$RUNNER_TEMP/files" index="$RUNNER_TEMP/index"
+          mkdir -p "$files"
+          echo "Tenants may keep one cat or one small dog. A pet deposit of 300 dollars is due at signing." > "$files/lease.txt"
+          echo "Quarterly sales grew eleven percent in the northern region, led by the new stores." > "$files/sales.md"
+          for i in $(seq 1 12); do
+            "$helper/ffmpeg.exe" -v error -f lavfi -i "testsrc2=size=1280x720" -vf "hue=h=$((i * 30))" -frames:v 1 "$files/pattern-$i.png"
+          done
+          "$helper/ffmpeg.exe" -v error -f lavfi -i "sine=frequency=440:duration=90" "$files/tone.wav"
+          "$helper/ffmpeg.exe" -v error -f lavfi -i "testsrc2=size=640x360:rate=25" -f lavfi -i "sine=frequency=660" -t 30 -shortest "$files/clip.mp4"
+          "$helper/digup.exe" download-model --to "$DIGUP_MODELS" | tail -1
+          time "$helper/digup.exe" index "$files" --index "$index"
+          "$helper/digup.exe" status --index "$index"
+          "$helper/digup.exe" speed --index "$index"
+          "$helper/digup.exe" search "which pets are allowed in the apartment" --index "$index" --json > "$RUNNER_TEMP/hits.json"
+          cat "$RUNNER_TEMP/hits.json"
+          grep -q 'lease.txt' "$RUNNER_TEMP/hits.json"
+
+      - name: Attach the installer to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" build.noindex/windows/*.exe --clobber

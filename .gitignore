@@ -23,3 +23,6 @@ evals/*.local.json
 # The Tauri shell (shell/): Cargo builds and the schemas tauri-build writes
 shell/src-tauri/target/
 shell/src-tauri/gen/
+
+# The helper folder scripts/build-windows.sh stages for the installer
+shell/src-tauri/helper/

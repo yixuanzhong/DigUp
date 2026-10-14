@@ -90,6 +90,10 @@ button.link { background: none; border: 0; color: var(--ember); padding: 10px 2p
 
 .note { font-size: 11px; color: var(--secondary); margin-top: 18px; }
 
+.login { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 22px; font-size: 13px; }
+.login[hidden] { display: none; }
+.login input { width: 16px; height: 16px; margin: 0; accent-color: var(--moss); }
+
 .keys { display: flex; gap: 6px; margin: 8px 0 4px; }
 .key {
   min-width: 44px; padding: 8px 12px; text-align: center; font-size: 16px; font-weight: 500;
