@@ -22,9 +22,10 @@ esac
 : "${VCToolsRedistDir:?run this inside the MSVC environment (vcvars64.bat, or an x64 Native Tools prompt)}"
 VERSION="${VERSION:-$(sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' Resources/Info.plist)}"
 TAURI_CLI=2.12.2         # @tauri-apps/cli, the same 2.x line as the shell's tauri crate
-# ffmpeg 8.0, LGPL, as DLLs (BtbN/FFmpeg-Builds): LGPL keeps DigUp's own license free of copyleft. The "latest" build of
-# a release branch is rebuilt with that branch's fixes, so its checksum is logged rather than pinned.
-FFMPEG_ZIP="${FFMPEG_ZIP:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.0-latest-win64-lgpl-shared-8.0.zip}"
+# ffmpeg, LGPL, as DLLs (BtbN/FFmpeg-Builds): LGPL keeps DigUp's own license free of copyleft. The newest release branch
+# it builds, unless FFMPEG_ZIP names a zip: its "latest" builds are rebuilt with each branch's fixes, and old branches
+# drop out, so the one used and its checksum are logged rather than pinned. GH_TOKEN, when set, is used for the lookup.
+FFMPEG_RELEASE=https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/tags/latest
 OUT=build.noindex/windows
 HELPER=shell/src-tauri/helper   # what the installer puts in helper\ (tauri.windows.conf.json)
 
@@ -54,13 +55,21 @@ cp "$SWIFT_RUNTIME"/*.dll "$HELPER/"
 # app-local copy of the files in VC\Redist).
 cp "$(cygpath -u "$VCToolsRedistDir")"/x64/Microsoft.VC*.CRT/*.dll "$HELPER/"
 
+PYTHON=python3
+python3 -c 'import zipfile' 2>/dev/null || PYTHON=python   # "python3" can be the Microsoft Store's stub
+if [[ -z "${FFMPEG_ZIP:-}" ]]; then
+  FFMPEG_ZIP=$(curl -fsSL --retry 3 ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} "$FFMPEG_RELEASE" | "$PYTHON" -c '
+import json, re, sys
+pattern = re.compile(r"ffmpeg-n(\d+)\.(\d+)-latest-win64-lgpl-shared-\d+\.\d+\.zip")
+builds = [(tuple(map(int, m.groups())), a["browser_download_url"])
+          for a in json.load(sys.stdin)["assets"] if (m := pattern.fullmatch(a["name"]))]
+print(max(builds)[1])')
+fi
 echo "ffmpeg ($FFMPEG_ZIP)"
 T=Vendor/ffmpeg-tmp
 rm -rf "$T" && mkdir -p "$T"
 curl -fsSL --retry 3 -o "$T/ffmpeg.zip" "$FFMPEG_ZIP"
 echo "ffmpeg sha256: $(sha256sum "$T/ffmpeg.zip" | cut -d' ' -f1)"
-PYTHON=python3
-python3 -c 'import zipfile' 2>/dev/null || PYTHON=python   # "python3" can be the Microsoft Store's stub
 "$PYTHON" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$T/ffmpeg.zip" "$T"
 FFMPEG_DIR="$(dirname "$(find "$T" -name ffprobe.exe | head -1)")"
 cp "$FFMPEG_DIR/ffmpeg.exe" "$FFMPEG_DIR/ffprobe.exe" "$FFMPEG_DIR"/*.dll "$HELPER/"

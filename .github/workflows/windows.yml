@@ -83,6 +83,8 @@ jobs:
 
       - name: Build the installer
         shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}   # finding ffmpeg's newest build
         run: |
           for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS=%%i"
           call "%VS%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
