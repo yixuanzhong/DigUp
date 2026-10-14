@@ -8,7 +8,7 @@ Search the files on your Mac by what's in them, with Google DeepMind's
 
 <p align="center"><a href="https://github.com/ARahim3/DigUp/releases/latest"><b>Download for Mac</b></a> · Apple Silicon,
 macOS 14 or later · Free and open source<br>
-<sub>Windows and Linux versions are on the way.</sub></p>
+<sub>Windows: see <a href="#windows">below</a>. Linux is on the way.</sub></p>
 
 <p align="center"><img src="docs/demo.gif" width="800" alt="DigUp's search panel finding a zebra in a video, a podcast moment, a clause in a lease, a dog on the beach in English, Bengali and Arabic, and code that opens in Zed"></p>
 
@@ -138,8 +138,10 @@ installer isn't code-signed ("More info", then "Run anyway").
 | Disk | About 1.2 GB for DigUp and the model, plus the index: about 2 KB a picture, page or passage, roughly 100 MB for 50,000 files |
 | Network | Once, for the 865 MB model (and WebView2, if an older Windows 10 lacks it) |
 
-The first pass is slower than on a Mac, roughly 10 to 30 times on a laptop with integrated graphics: half an hour to
-two hours for a few hundred files, and most of a day for a big library of photos and video. It runs at low priority so
+The first pass is slower than on a Mac. On the processor alone it's about 4 seconds a photo and a minute for every 2–4
+minutes of audio or video (measured on a 4-core PC, about 30 times an M4 Pro's time); graphics that Vulkan can use
+take less. That's half an hour to two hours for a few hundred files, and most of a day for a big library of photos
+and video. It runs at low priority so
 the PC stays usable, and it happens once: after that, new files are searchable within seconds. A few things the Mac version does aren't there yet on Windows: the text inside
 screenshots and scanned PDFs (they're found by what they show and by name), RAW photos, legacy `.doc` files, code
 search, and opening a video at its moment (the panel's preview plays from there; ↩ opens the file at its start).
